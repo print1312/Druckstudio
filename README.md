@@ -28,8 +28,8 @@ Wenn das Update nicht sofort erscheint: Seite einmal neu laden (in Bluefy ggf. T
 
 - **Oben – Drucker:** `🔗 Verbinden` öffnet die Bluetooth-Auswahl. Modell wird automatisch erkannt. Über `⚙ Drucker` lassen sich Modell, Etikettgröße und Dichte ändern. Auf dem iPhone klappt die Leiste nach dem Verbinden zusammen, damit die Vorschau größer ist.
 - **Mitte – Vorschau:** Der rote Rahmen ist der Druckbereich. Elemente antippen und ziehen; mit zwei Fingern zoomen und drehen. `− 100% +` ändert nur die Ansichtsgröße (auf die Prozentzahl tippen = 100 %).
-  - Die Vorschau zeigt **immer genau das Druckergebnis** (der Drucker kennt nur Schwarz und Weiß).
-  - **Schwelle** (bei Schwarzweiß-Bildern): höher = mehr Schwarz.
+  - Die Vorschau zeigt **immer das Druckergebnis** – so, wie es auf dem Etikett aussieht: Fotos als Graustufen (der Drucker setzt sie aus feinen Punkten zusammen, die man auf dem Etikett nicht einzeln sieht), Text, Linien und Logos gestochen scharf.
+  - Kopfzeile: **Schwelle** (bei Schwarzweiß-Bildern: höher = mehr Schwarz; bei Fotos: höher = dunkler, 128 = wie das Original), **↻ 90°** dreht den Druckbereich – auch schon vor dem ersten Bild, neue Etiketten übernehmen die Ausrichtung.
   - **⬚ Außen** zeigt Teile außerhalb des Druckbereichs blass an.
   - `↶` / `↷` = Rückgängig / Wiederholen.
 - **Unten – Werkzeuge** (Tabs): Dateien, Text, Rundtext, Bild, Ebenen, Position, Vorlagen. Auf dem iPhone lässt sich die Höhe am Griff ziehen oder mit Klein/Mittel/Groß wählen. Auf dem Laptop stehen die Werkzeuge rechts neben der Vorschau.
@@ -40,8 +40,10 @@ Wenn das Update nicht sofort erscheint: Seite einmal neu laden (in Bluefy ggf. T
 Im Tab **Bild** gibt es eine gemeinsame Auswahl für das ausgewählte Bild:
 
 **Druckmodus**
-- **⚫ Schwarzweiß:** für Logos, Text, Grafiken. Die Grenze zwischen Schwarz und Weiß stellst du mit **Schwelle** oben in der Vorschau-Kopfzeile ein (höher = mehr Schwarz). PNG-Bilder starten so.
-- **🖼️ Foto:** Graustufen als feine Punkte mit automatischem Kontrast und leichter Schärfung. Dunkle Flächen bleiben schwarz statt voller weißer Punkte. JPG-Fotos starten so.
+- **⚫ Schwarzweiß:** für Logos, Text, Grafiken. Die Grenze zwischen Schwarz und Weiß stellst du mit **Schwelle** oben in der Vorschau-Kopfzeile ein (höher = mehr Schwarz).
+- **🖼️ Foto:** Graustufen als feine Druckpunkte, Helligkeit und Look wie im Original – ohne automatische Kontrast- oder Schärfeänderung. Mit **Schwelle** heller/dunkler.
+
+Beim Import wird automatisch erkannt, ob ein Bild ein Foto (viele Graustufen) oder eine Grafik/ein Logo ist, und der passende Modus gewählt – egal ob JPG oder PNG. Der Look wird nur verändert, wenn du selbst einen anderen Modus, einen Zeichenstil oder die Regler im Bereich „Bild bearbeiten“ wählst.
 
 **Als Zeichnung** (wandelt das Foto in Linien um – druckt am klarsten)
 

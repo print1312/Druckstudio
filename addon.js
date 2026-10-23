@@ -3,7 +3,7 @@ const state = {
   queue: [], pdfJs: null, registry: null, selected: -1,
   printing: false, stop: false, previewVersion: 0, fonts: [], textSelectedId: null, activeImageId: "image", cropState: null,
   editor: { pointers: new Map(), mode: null, start: null, crop: null, sizeInfo: null, entry: null },
-  viewZoom: 1, showOutsideBounds: false, savedTemplates: [], labelRotateMode: "keep"
+  viewZoom: 1, defaultPageRotation: 0, showOutsideBounds: false, savedTemplates: [], labelRotateMode: "keep"
 };
 // Undo/redo tracks editable label data. Files/Blobs are kept by reference instead
 // of being duplicated, so a large image is not copied on every touch operation.
@@ -387,7 +387,7 @@ async function importTemplateFile(file){
   state.savedTemplates.unshift(...records);renderTemplateLibrary();message(records.length+' Vorlage(n) importiert.');
  }finally{state.templateBusy=false;refreshBusyUi();}
 }
-function updateTemplateUiState(){const hasCurrent=!!state.queue[state.selected];for(const id of ["dd-template-save-browser","dd-template-save-as","dd-template-export-file"]){if($(id))$(id).disabled=!hasCurrent||isBusy();}if($("dd-label-rotation-status"))$("dd-label-rotation-status").textContent=state.queue[state.selected]?.pageRotation===90?"90° Hochkant":"0° Querformat";if($("dd-preview-overflow-toggle")){$("dd-preview-overflow-toggle").textContent="⬚ Außen";$("dd-preview-overflow-toggle").setAttribute("aria-pressed",String(state.showOutsideBounds));}if($("dd-show-outside-check"))$("dd-show-outside-check").checked=!!state.showOutsideBounds;}
+function updateTemplateUiState(){const hasCurrent=!!state.queue[state.selected];for(const id of ["dd-template-save-browser","dd-template-save-as","dd-template-export-file"]){if($(id))$(id).disabled=!hasCurrent||isBusy();}{const rot=state.queue[state.selected]?(state.queue[state.selected].pageRotation===90?90:0):state.defaultPageRotation;if($("dd-label-rotation-status"))$("dd-label-rotation-status").textContent=rot===90?"90° Hochkant":"0° Querformat";if($("dd-rotate-head")){$("dd-rotate-head").setAttribute("aria-pressed",String(rot===90));$("dd-rotate-head").title="Druckbereich um 90° drehen (jetzt: "+(rot===90?"hochkant":"quer")+")";}}if($("dd-preview-overflow-toggle")){$("dd-preview-overflow-toggle").textContent="⬚ Außen";$("dd-preview-overflow-toggle").setAttribute("aria-pressed",String(state.showOutsideBounds));}if($("dd-show-outside-check"))$("dd-show-outside-check").checked=!!state.showOutsideBounds;}
 let templateThumbUrls=[];
 function renderTemplateLibrary(){
  const list=$('dd-template-list');if(!list)return;
@@ -410,7 +410,8 @@ function renderTemplateLibrary(){
  }
 }
 function toggleLabelRotation(){
- const entry=state.queue[state.selected];if(!entry){message('Bitte zuerst ein Etikett auswählen.',true);return;}
+ const entry=state.queue[state.selected];
+ if(!entry){state.defaultPageRotation=state.defaultPageRotation===90?0:90;updateTemplateUiState();requestPreview();message('Druckbereich '+(state.defaultPageRotation===90?'hochkant (90°)':'quer (0°)')+'. Neue Etiketten übernehmen diese Ausrichtung.');return;}
  const current=currentEntryAndLayout();if(!current)return;
  // Turning the rectangular print area swaps its logical width/height. The user
  // can choose between a stationary design and rotating every layer with it.
@@ -427,7 +428,7 @@ function toggleLabelRotation(){
   const pos=transform(t.x,t.y);t.x=pos.x;t.y=pos.y;
   if(rotateWithContent)t.rotation=normalizeAngle((Number(t.rotation)||0)+delta);
  }
- entry.pageRotation=entry.pageRotation===90?0:90;
+ entry.pageRotation=entry.pageRotation===90?0:90;state.defaultPageRotation=entry.pageRotation;
  const newKey=readSize().sizeKey+orientationSuffix(entry);
  for(const layer of allImages(entry).map(x=>x.layer)){
   const previous=layer.layouts?.[oldKey];if(!previous)continue;
@@ -567,13 +568,22 @@ async function rasterizePdfPage(page, importMode){
   const blob=await new Promise((resolve,reject)=>canvas.toBlob(b=>b?resolve(b):reject(Error('PDF-Seite konnte nicht gerastert werden')),'image/png'));
   canvas.width=0; canvas.height=0; return blob;
 }
+// Photos (many grey tones) get tone-faithful screening, graphics/text/logos a clean threshold.
+function looksLikePhoto(img){
+ try{const s=Math.min(1,160/Math.max(img.naturalWidth||img.width,img.naturalHeight||img.height)),c=document.createElement('canvas');c.width=Math.max(1,Math.round((img.naturalWidth||img.width)*s));c.height=Math.max(1,Math.round((img.naturalHeight||img.height)*s));
+  const x=c.getContext('2d',{willReadFrequently:true});x.fillStyle='#fff';x.fillRect(0,0,c.width,c.height);x.drawImage(img,0,0,c.width,c.height);
+  const d=x.getImageData(0,0,c.width,c.height).data,bins=new Uint32Array(32);let mid=0,n=0;
+  for(let i=0;i<d.length;i+=4){const l=.299*d[i]+.587*d[i+1]+.114*d[i+2];bins[Math.min(31,l>>3)]++;n++;if(l>40&&l<215)mid++;}
+  c.width=c.height=0;const used=[...bins].filter(v=>v>n*.004).length;return mid/n>.18&&used>=14;
+ }catch(e){return true;}
+}
 function createImageLayer(blob,name,importMode){return {id:'img:'+Date.now().toString(36)+Math.random().toString(36).slice(2),kind:'image',blob,name,importDpi:importMode,locked:false,layouts:{},crop:{x:0,y:0,w:1,h:1,shape:'rect',preset:'free'}};}
 async function createEmptyLabelEntry(){
  const canvas=document.createElement('canvas');canvas.width=canvas.height=2;
  const ctx=canvas.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,2,2);
  const blob=await new Promise((resolve,reject)=>canvas.toBlob(b=>b?resolve(b):reject(Error('Leeres Etikett konnte nicht erstellt werden')),'image/png'));
  canvas.width=canvas.height=0;
- return {kind:'blank',blob,name:'Etikett '+(state.queue.length+1),importDpi:'original',layouts:{},texts:[],images:[],layers:[],pageRotation:0};
+ return {kind:'blank',blob,name:'Etikett '+(state.queue.length+1),importDpi:'original',layouts:{},texts:[],images:[],layers:[],pageRotation:state.defaultPageRotation===90?90:0};
 }
 async function addFiles(files,asLayersOverride=null){
  const input=Array.from(files||[]);if(!input.length||isBusy())return;
@@ -598,7 +608,7 @@ async function addFiles(files,asLayersOverride=null){
    layerOrder(target);
    state.activeImageId=layer.id;
   }else{
-   target={kind,blob,name,importDpi:importMode,layouts:{},texts:[],images:[],crop:{x:0,y:0,w:1,h:1,shape:'rect',preset:'free'},pageRotation:0};
+   target={kind,blob,name,importDpi:importMode,layouts:{},texts:[],images:[],crop:{x:0,y:0,w:1,h:1,shape:'rect',preset:'free'},pageRotation:state.defaultPageRotation===90?90:0};
    state.queue.push(target);state.selected=state.queue.length-1;
    layer=target;state.activeImageId='image';
   }
@@ -617,7 +627,8 @@ async function addFiles(files,asLayersOverride=null){
       if(max<doc.numPages)skipped+=doc.numPages-max;
       for(let n=1;n<=max;n++){
        const page=await doc.getPage(n);
-       try{await addBlob(await rasterizePdfPage(page,importMode),file.name+' – Seite '+n,'pdf');}
+       try{const pageBlob=await rasterizePdfPage(page,importMode);await addBlob(pageBlob,file.name+' – Seite '+n,'pdf');
+        const last=importedLayers.at(-1)?.layer;if(last)imageAdjustments(last).mode=looksLikePhoto(await decodeBlob(pageBlob))?'photo':'bw';}
        finally{page.cleanup();}
       }
      }finally{await task.destroy();}
@@ -630,7 +641,7 @@ async function addFiles(files,asLayersOverride=null){
       blob=await new Promise((resolve,reject)=>c.toBlob(b=>b?resolve(b):reject(Error('Bild konnte nicht umgewandelt werden')),'image/png'));c.width=c.height=0;
      }
      await addBlob(blob,file.name,'image');
-     if(/jpe?g|heic|heif/i.test(file.type||ext)){const last=importedLayers.at(-1)?.layer;if(last)imageAdjustments(last).mode='photo';}
+     const last=importedLayers.at(-1)?.layer;if(last)imageAdjustments(last).mode=looksLikePhoto(decoded)?'photo':'bw';
     }else{skipped++;failed.push(file.name+' (nur PDF, PNG, JPG)');}
    }catch(e){skipped++;failed.push(file.name+' ('+(e.message||e)+')');}
   }
@@ -972,24 +983,24 @@ function setImagePanel(entry){
 // ---- Black/white threshold, shown in the preview header next to the print view ----
 function effectiveThreshold(layer){
  const a=imageAdjustments(layer);
- if(a.mode==='bw'){const v=Number(a.threshold);return Number.isFinite(v)?Math.max(1,Math.min(254,Math.round(v))):128;}
- return 128; // 'default' (V17 and earlier) = the printer driver's own 50 % rule
+ if(a.mode==='default'||a.mode===undefined)return 128; // V17 and earlier = the driver's own 50 % rule
+ const v=Number(a.threshold);return Number.isFinite(v)?Math.max(1,Math.min(254,Math.round(v))):128;
 }
 function syncThresholdControl(){
  const wrap=$('dd-threshold-wrap');if(!wrap)return;
  const entry=state.queue[state.selected],layer=activeImageLayer(entry);
  wrap.hidden=!layer;if(!layer)return;
- const dither=layerPrintMode(layer)!=='bw',off=dither||!!layer.locked,value=effectiveThreshold(layer);
+ const photo=layerPrintMode(layer)==='photo',off=!!layer.locked,value=effectiveThreshold(layer);
  const slider=$('dd-threshold');
  if(document.activeElement!==slider)slider.value=String(value);
  $('dd-threshold-value').textContent=String(value);
  for(const el of [slider,$('dd-threshold-minus'),$('dd-threshold-plus')])el.disabled=off;
  wrap.classList.toggle('dd-off',off);
- wrap.title=layer.locked?'Bild ist gesperrt':dither?'Bei „Foto – Rasterung“ gibt es keine Schwelle. Im Tab „Bild“ auf Schwarzweiß umstellen.':'Schwarzweiß-Schwelle für „'+(layer.name||'Bild')+'“: höher = mehr Schwarz, niedriger = mehr Weiß';
+ wrap.title=layer.locked?'Bild ist gesperrt':(photo?'Helligkeit des Fotos „':'Schwarzweiß-Schwelle für „')+(layer.name||'Bild')+'“: höher = dunkler / mehr Schwarz, niedriger = heller. 128 = unverändert.';
 }
 function setThreshold(value){
- const layer=activeImageLayer(state.queue[state.selected]);if(!layer||layer.locked||layerPrintMode(layer)!=='bw')return;
- const a=imageAdjustments(layer);a.mode='bw';a.threshold=Math.max(1,Math.min(254,Math.round(Number(value)||128)));
+ const layer=activeImageLayer(state.queue[state.selected]);if(!layer||layer.locked)return;
+ const a=imageAdjustments(layer);if(a.mode==='default'||a.mode===undefined)a.mode='bw';a.threshold=Math.max(1,Math.min(254,Math.round(Number(value)||128)));
  syncModePanel(layer);syncThresholdControl();requestPreview();
 }
 function clamp01(v){return Math.max(0,Math.min(1,v));}
@@ -1020,28 +1031,24 @@ function applyAdjustments(ctx,w,h,a){
 // Print modes: 'bw' = threshold (logos, text, line art), 'photo' = Atkinson screening.
 // Older values ('dither', 'gray', 'atkinson') from V17/V18 drafts all mean 'photo'.
 function layerPrintMode(layer){const m=imageAdjustments(layer).mode;return ['photo','dither','gray','atkinson'].includes(m)?'photo':'bw';}
-function binarizeLayerCanvas(canvas,mode,threshold,enhance=false){
+function binarizeLayerCanvas(canvas,mode,threshold){
  const w=canvas.width,h=canvas.height;if(!w||!h)return;
  const ctx=canvas.getContext('2d',{willReadFrequently:true}),img=ctx.getImageData(0,0,w,h),px=img.data;
+ const thr=Math.max(1,Math.min(254,Number(threshold)||128));
  if(mode==='photo'){
-  const n=w*h,lum=new Float32Array(n),solid=new Uint8Array(n);let count=0;
-  for(let i=0,p=0;p<n;i+=4,p++){const a=px[i+3]/255;if(a<.5){lum[p]=255;continue;}solid[p]=1;count++;lum[p]=(.299*px[i]+.587*px[i+1]+.114*px[i+2])*a+255*(1-a);}
-  if(enhance&&count){
-   // Photo preparation for a 1-bit printer: auto levels, gentle S-curve and slight
-   // sharpening, so dark areas print solid (no scattered white dots) and faces keep detail.
-   const vals=new Float32Array(count);for(let p=0,k=0;p<n;p++)if(solid[p])vals[k++]=lum[p];
-   const lo=quantile(vals,.01),hi=quantile(vals,.99),span=Math.max(32,hi-lo),blur=gaussBlur(lum,w,h,1);
-   for(let p=0;p<n;p++){if(!solid[p])continue;let v=(lum[p]+.8*(lum[p]-blur[p])-lo)/span;v=Math.max(0,Math.min(1,v));v=Math.max(0,Math.min(1,.5+(v-.5)*1.15));lum[p]=v*255;}
-  }
-  // Atkinson screening: passes on only 3/4 of the error, so shadows stay black and
-  // highlights stay white instead of the salt-and-pepper look of Floyd-Steinberg.
-  for(let y=0;y<h;y++)for(let x=0;x<w;x++){const p=y*w+x;if(!solid[p])continue;const old=lum[p],nv=old<128?0:255,e=(old-nv)/8;lum[p]=nv;
-   if(x+1<w&&solid[p+1])lum[p+1]+=e;if(x+2<w&&solid[p+2])lum[p+2]+=e;
-   if(y+1<h){const q=p+w;if(x>0&&solid[q-1])lum[q-1]+=e;if(solid[q])lum[q]+=e;if(x+1<w&&solid[q+1])lum[q+1]+=e;}
-   if(y+2<h&&solid[p+2*w])lum[p+2*w]+=e;}
+  // Tone-faithful screening (Jarvis-Judice-Ninke error diffusion, serpentine): keeps the
+  // brightness of every area as in the original – no automatic contrast or sharpening.
+  // The threshold acts as a brightness shift: 128 = unchanged, higher = darker.
+  const n=w*h,lum=new Float32Array(n),solid=new Uint8Array(n),bias=thr-128;
+  for(let i=0,p=0;p<n;i+=4,p++){const a=px[i+3]/255;if(a<.5)continue;solid[p]=1;lum[p]=(.299*px[i]+.587*px[i+1]+.114*px[i+2])*a+255*(1-a)-bias;}
+  const K=[[1,0,7],[2,0,5],[-2,1,3],[-1,1,5],[0,1,7],[1,1,5],[2,1,3],[-2,2,1],[-1,2,3],[0,2,5],[1,2,3],[2,2,1]];
+  for(let y=0;y<h;y++){const ltr=!(y&1);
+   for(let k=0;k<w;k++){const x=ltr?k:w-1-k,p=y*w+x;if(!solid[p])continue;
+    const old=lum[p],nv=old<128?0:255,e=(old-nv)/48;lum[p]=nv;
+    for(const [dx,dy,f] of K){const X=x+(ltr?dx:-dx),Y=y+dy;if(X<0||X>=w||Y>=h)continue;const q=Y*w+X;if(solid[q])lum[q]+=e*f;}
+   }}
   for(let i=0,p=0;p<n;i+=4,p++){if(!solid[p]){px[i+3]=0;continue;}const v=lum[p]<128?0:255;px[i]=px[i+1]=px[i+2]=v;px[i+3]=255;}
  }else{
-  const thr=Math.max(1,Math.min(254,Number(threshold)||128));
   for(let i=0;i<px.length;i+=4){const a=px[i+3]/255;if(a<.5){px[i+3]=0;continue;}
    const l=(.299*px[i]+.587*px[i+1]+.114*px[i+2])*a+255*(1-a),v=l<thr?0:255;px[i]=px[i+1]=px[i+2]=v;px[i+3]=255;}
  }
@@ -1232,19 +1239,24 @@ function rasterizeImageLayer(layer,sizeInfo,img,layout,ext=null){
  c.width=ext?ext.w:lw;c.height=ext?ext.h:lh;
  drawImageAtLayout(c.getContext('2d'),adjustedSource(layer,img,layout.refW*layout.scale),layout,1,ext?{x:ext.l,y:ext.t,w:lw,h:lh}:null,{crop:{x:0,y:0,w:1,h:1,shape:normalizedCrop(layer).shape}});return c;
 }
-async function renderLabelCanvas(entry,baseSizeInfo,{physical=false,oneBit=true,extend=null}={}){
+async function renderLabelCanvas(entry,baseSizeInfo,{physical=false,oneBit=true,extend=null,photoMask=false}={}){
  // extend = {l,t,r,b} in label pixels: also renders what lies outside the print area (preview only).
  const sizeInfo=effectiveSizeInfo(entry,baseSizeInfo),{size}=sizeInfo;validateSize(size);
  const lw=Math.round(size.w_px),lh=Math.round(size.h_px),ext=extend?{l:Math.round(extend.l),t:Math.round(extend.t),w:Math.round(lw+extend.l+extend.r),h:Math.round(lh+extend.t+extend.b)}:null;
  const canvas=document.createElement('canvas');canvas.width=ext?ext.w:lw;canvas.height=ext?ext.h:lh;
  if(canvas.width*canvas.height>12_000_000)throw Error('Etikett ist zu groß (max. 12 Millionen Pixel)');
  const ctx=canvas.getContext('2d',{alpha:false,willReadFrequently:oneBit});ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);
+ // photoMask marks the pixels that come from photo-mode layers (used only by the preview).
+ const mask=photoMask?new Uint8Array(canvas.width*canvas.height):null;
  for(const id of layerOrder(entry)){
    const layer=imageForId(entry,id);
-   if(layer){const {img,layout}=await getLayout(layer,sizeInfo);const raster=rasterizeImageLayer(layer,sizeInfo,img,layout,ext);if(oneBit)binarizeLayerCanvas(raster,layerPrintMode(layer),effectiveThreshold(layer),sketchStyleOf(imageAdjustments(layer))==='none');ctx.drawImage(raster,0,0);raster.width=raster.height=0;}
+   if(layer){const {img,layout}=await getLayout(layer,sizeInfo);const raster=rasterizeImageLayer(layer,sizeInfo,img,layout,ext);if(oneBit)binarizeLayerCanvas(raster,layerPrintMode(layer),effectiveThreshold(layer));
+    if(mask){const d=raster.getContext('2d',{willReadFrequently:true}).getImageData(0,0,raster.width,raster.height).data,isPhoto=layerPrintMode(layer)==='photo';for(let i=0,p=0;p<mask.length;i+=4,p++)if(d[i+3]>127)mask[p]=isPhoto?1:0;}
+    ctx.drawImage(raster,0,0);raster.width=raster.height=0;}
    else{const t=(entry.texts||[]).find(t=>t.id===id);if(t){ctx.save();if(ext)ctx.translate(ext.l,ext.t);drawTextItem(ctx,t,lw);ctx.restore();}}
  }
  if(oneBit)finalizeOneBit(canvas);
+ if(mask)canvas.photoMask=mask;
  if(!physical || entry.pageRotation!==90)return canvas;
  const out=document.createElement('canvas');out.width=Math.round(baseSizeInfo.size.w_px);out.height=Math.round(baseSizeInfo.size.h_px);
  const octx=out.getContext('2d',{alpha:false});octx.fillStyle='#fff';octx.fillRect(0,0,out.width,out.height);octx.imageSmoothingEnabled=false;octx.save();octx.translate(out.width/2,out.height/2);octx.rotate(Math.PI/2);octx.drawImage(canvas,-canvas.width/2,-canvas.height/2);octx.restore();canvas.width=canvas.height=0;return out;
@@ -1270,13 +1282,20 @@ function drawImageOutsidePrintArea(ctx,img,layout,crop,layer){
 }
 // Draws a 1-bit label onto the preview. Enlarged views use an integer nearest-neighbour
 // step first, so every printer dot has the same size (no uneven dots or moiré).
-function drawPrintPixels(ctx,label,x,y,w,h){
- const dpr=Math.max(1,window.devicePixelRatio||1),k=Math.floor(w*dpr/label.width);
+// Draws the 1-bit label onto the preview the way it looks on paper. Printer dots are tiny
+// (0.085 mm at 300 dpi, 0.125 mm at 203 dpi): on the label a screened photo reads as smooth
+// grey tones. The preview is several times larger than the label, so photo areas are shown
+// as the eye sees them on paper (dots merged), while text, lines and logos stay crisp.
+function drawPrintPixels(ctx,label,x,y,w,h,dpi=300){
  ctx.save();ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';
- if(k>=2&&label.width*label.height*k*k<=16e6){
-  const big=document.createElement('canvas');big.width=label.width*k;big.height=label.height*k;
-  const b=big.getContext('2d');b.imageSmoothingEnabled=false;b.drawImage(label,0,0,big.width,big.height);
-  ctx.drawImage(big,x,y,w,h);big.width=big.height=0;
+ const mask=label.photoMask;
+ if(mask&&mask.some(v=>v)&&label.width*label.height<=6e6){
+  const lx=label.getContext('2d',{willReadFrequently:true}),src=lx.getImageData(0,0,label.width,label.height),d=src.data,n=label.width*label.height,g=new Float32Array(n);
+  for(let i=0,p=0;p<n;i+=4,p++)g[p]=d[i];
+  const b=gaussBlur(g,label.width,label.height,Math.max(.8,1.15*dpi/300));
+  for(let i=0,p=0;p<n;i+=4,p++)if(mask[p]){const v=b[p];d[i]=d[i+1]=d[i+2]=v<0?0:v>255?255:v;}
+  const tmp=document.createElement('canvas');tmp.width=label.width;tmp.height=label.height;tmp.getContext('2d').putImageData(src,0,0);
+  ctx.drawImage(tmp,x,y,w,h);tmp.width=tmp.height=0;
  }else ctx.drawImage(label,x,y,w,h);
  ctx.restore();
 }
@@ -1302,7 +1321,7 @@ async function paintPreview(){
   // A selected roll defines the red print region, independent of imported artwork.
   state.editor.entry=null;state.editor.imageHandle=null;state.editor.textHandles=null;
   let sizeInfo=null;
-  try{if(loaded()){if(!state.registry)await upstreamRegistry();sizeInfo=readSize();}}catch(e){console.warn('[dragdrop] Etikett-Rahmen noch nicht verfügbar:',e.message||e);}
+  try{if(loaded()){if(!state.registry)await upstreamRegistry();sizeInfo=effectiveSizeInfo({pageRotation:state.defaultPageRotation},readSize());}}catch(e){console.warn('[dragdrop] Etikett-Rahmen noch nicht verfügbar:',e.message||e);}
   if(version!==state.previewVersion)return;
   updateEditorViewport(sizeInfo?.size||null);
   const {ctx,cssW,cssH}=editorSize();ctx.fillStyle='#d9dee7';ctx.fillRect(0,0,cssW,cssH);
@@ -1339,11 +1358,11 @@ async function paintPreview(){
    const lim=Math.max(sizeInfo.size.w_px,sizeInfo.size.h_px)*1.5,e=v=>Math.max(0,Math.min(lim,Math.ceil(v/crop.scale)));
    extend={l:e(crop.x),t:e(crop.y),r:e(cssW-crop.x-crop.w),b:e(cssH-crop.y-crop.h)};
   }
-  const label=await renderLabelCanvas(entry,baseSizeInfo,{extend});
+  const label=await renderLabelCanvas(entry,baseSizeInfo,{extend,photoMask:true});
   if(version!==state.previewVersion){label.width=label.height=0;return;}
   const dx=crop.x-(extend?.l||0)*crop.scale,dy=crop.y-(extend?.t||0)*crop.scale,dw=label.width*crop.scale,dh=label.height*crop.scale;
   if(!extend&&!state.editor.pointers.size)storeThumb(entry,label);
-  drawPrintPixels(ctx,label,dx,dy,dw,dh);label.width=label.height=0;
+  drawPrintPixels(ctx,label,dx,dy,dw,dh,sizeDpi(sizeInfo.size));label.width=label.height=0;
   if(extend){ctx.save();ctx.fillStyle='rgba(217,222,231,.62)';ctx.beginPath();ctx.rect(0,0,cssW,cssH);ctx.rect(crop.x,crop.y,crop.w,crop.h);ctx.fill('evenodd');ctx.restore();}
   ctx.save();ctx.strokeStyle='#f43f5e';ctx.lineWidth=2.5;ctx.setLineDash([6,5]);ctx.strokeRect(crop.x,crop.y,crop.w,crop.h);ctx.restore();
   if(state.showOutsideBounds){
@@ -1929,7 +1948,7 @@ function updatePrinterSummary(){
 // One chooser for how an image is printed: plain modes and drawing styles side by side.
 const PRINT_MODES={
  bw:{label:'⚫ Schwarzweiß',hint:'Logos, Text, Grafiken. Die Schwelle oben in der Vorschau bestimmt, was schwarz wird.'},
- photo:{label:'🖼️ Foto',hint:'Graustufen als feine Punkte, mit automatischem Kontrast – für Fotos ohne Zeichenstil.'},
+ photo:{label:'🖼️ Foto',hint:'Graustufen als feine Druckpunkte, Helligkeit wie im Original. Mit „Schwelle“ oben heller/dunkler.'},
  pencil:{hint:'Klare Konturen mit leichten Bleistiftstrichen.'},
  soft:{hint:'Weiche Skizze mit heller Schattierung.'},
  comic:{hint:'Kräftige Linien, dunkle Flächen werden schwarz.'},
@@ -2018,6 +2037,8 @@ function setupTabbedLayout(){
  const thresholdWrap=make('div','dd-threshold');thresholdWrap.id='dd-threshold-wrap';thresholdWrap.setAttribute('role','group');thresholdWrap.setAttribute('aria-label','Schwarzweiß-Schwelle');thresholdWrap.hidden=true;
  thresholdWrap.innerHTML='<label for="dd-threshold">Schwelle</label><button id="dd-threshold-minus" type="button" aria-label="Schwelle verringern (mehr Weiß)">−</button><input id="dd-threshold" type="range" min="1" max="254" step="1" value="128" aria-label="Schwarzweiß-Schwelle"><button id="dd-threshold-plus" type="button" aria-label="Schwelle erhöhen (mehr Schwarz)">+</button><output id="dd-threshold-value">128</output>';
  previewHead.appendChild(thresholdWrap);
+ const rotateHead=make('button','','↻ 90°');rotateHead.type='button';rotateHead.id='dd-rotate-head';rotateHead.title='Druckbereich um 90° drehen';rotateHead.setAttribute('aria-label','Druckbereich um 90 Grad drehen');
+ rotateHead.onclick=()=>toggleLabelRotation();previewHead.appendChild(rotateHead);
  thresholdWrap.querySelector('#dd-threshold').addEventListener('input',e=>setThreshold(e.target.value));
  thresholdWrap.querySelector('#dd-threshold-minus').addEventListener('click',()=>setThreshold(Number(thresholdWrap.querySelector('#dd-threshold').value)-5));
  thresholdWrap.querySelector('#dd-threshold-plus').addEventListener('click',()=>setThreshold(Number(thresholdWrap.querySelector('#dd-threshold').value)+5));

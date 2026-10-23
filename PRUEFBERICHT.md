@@ -24,7 +24,9 @@ Grundlage: V17 („Mehrbild, Ebenen, Rahmen“). Der gesamte Code (`index.html`,
 
 ## Neu: Druckmodus & Zeichenstil, saubere Fotos
 
-- **Weiße Punkte in Fotos behoben:** Fotos wurden bisher mit Floyd-Steinberg gerastert, was in dunklen Bereichen (Haare, Hintergrund) viele einzelne weiße Punkte erzeugt. Neu: Atkinson-Rasterung mit automatischem Kontrast und leichter Schärfung. Messung am Porträt-Testbild: einzelne weiße Punkte 2887 → 684 (−76 %), bei der Katze 1662 → 727.
+- **Fotos sehen aus wie das Original:** Die Zwischenversion hob Kontrast und Schärfe automatisch an und rasterte grob – das veränderte den Look (dunkle Hintergründe wurden schwarz, helle Bereiche weiß, sichtbare Punkte). Jetzt: tongetreue Rasterung (Jarvis-Judice-Ninke) ohne automatische Veränderungen. Gemessen am Porträt: mittlere Helligkeitsabweichung zwischen Druckbild (aus Betrachtungsabstand) und Original 1,8 von 255, Helligkeitsverschiebung −0,1. Die Vorschau zeigt Fotobereiche so, wie die feinen Druckpunkte auf dem Etikett wirken (als Graustufen), Text/Linien/Logos bleiben scharf. Foto oder Grafik wird beim Import am Bildinhalt erkannt, nicht am Dateityp.
+- **Schwelle immer bedienbar:** War bei Fotos gesperrt. Jetzt wirkt sie bei Fotos als Helligkeit (128 = unverändert), bei Schwarzweiß als Schwelle. Getestet mit Maus-Ziehen, Pfeiltasten, Antippen und Touch-Ziehen.
+- **↻ 90° in der Vorschau-Kopfzeile:** dreht den Druckbereich, auch ohne Datei; neue Etiketten übernehmen die Ausrichtung.
 - **„Druckansicht/Original“ entfernt:** Die Vorschau zeigt immer das Druckergebnis, auch bei „⬚ Außen“ (Teile außerhalb des Druckbereichs werden genauso berechnet und nur abgeblendet). Vergrößerte Ansichten zeigen gleichmäßig große Druckpunkte (kein Moiré).
 - **Eine Auswahl im Tab „Bild“:** Schwarzweiß, Foto und die fünf Zeichenstile (Bleistift, Weich, Comic, Umrisse, Schraffur) stehen gemeinsam als Knöpfe zur Wahl; die alte Auswahlliste entfällt.
 - **Zeichenstile überarbeitet:** kantenerhaltende Vereinfachung (Kuwahara-Filter) vor der Linienerkennung, zweistufige Konturerkennung mit Hysterese (durchgehende statt gestrichelte Linien, Motiv tritt hervor, Hintergrundstruktur wird ruhiger), Entfernen kleiner Störflecken, geglättete Strichkanten. Berechnung in Druckauflösung, ca. 0,1 s pro Etikett.
@@ -34,7 +36,7 @@ Getestet mit 9 Motiven aus 6 Bereichen (2 Porträts, 2 Landschaften/Architektur,
 
 ## Automatisierte Tests (Chromium, Playwright, simulierter Drucker)
 
-Alle Tests bestanden: **180 von 180** Prüfungen in 11 Durchläufen (iPhone 390 px, iPhone SE 375 px, Laptop 1366 px).
+Alle Tests bestanden: **202 von 202** Prüfungen in 12 Durchläufen (iPhone 390 px, iPhone SE 375 px, Laptop 1366 px).
 
 Schwellen-Test: Anteil schwarzer Pixel im Druckbild bei Schwelle 60 / 128 / 200 = 1,5 % / 14,6 % / 42 % – Vorschau und Druckbild ändern sich gleich, Druckbild bleibt reines Schwarz/Weiß, +/−, Rückgängig und eigene Werte je Bildebene funktionieren.
 
