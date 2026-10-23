@@ -215,7 +215,7 @@ async function restoreTemplateFonts(record){
 async function serializeFonts(fonts){return Promise.all((fonts||[]).map(async f=>({id:f.id,name:f.name,blobData:await blobToDataURL(new Blob([f.bytes],{type:'application/octet-stream'}))})));}
 function entryTemplateName(entry){const input=$("dd-template-name");const fromInput=input?.dataset.entry===entry?.editorId?input.value.trim():'';return fromInput||entry?.templateName||entry?.name||("Label "+(state.queue.length||1));}
 async function makeTemplateThumbnail(entry,info){
- const full=await renderLabelCanvas(entry,info,{oneBit:true});const t=document.createElement('canvas');const factor=Math.min(1,240/Math.max(full.width,full.height));t.width=Math.max(1,Math.round(full.width*factor));t.height=Math.max(1,Math.round(full.height*factor));t.getContext('2d').drawImage(full,0,0,t.width,t.height);full.width=full.height=0;
+ const full=await renderLabelCanvas(entry,info);const t=document.createElement('canvas');const factor=Math.min(1,240/Math.max(full.width,full.height));t.width=Math.max(1,Math.round(full.width*factor));t.height=Math.max(1,Math.round(full.height*factor));t.getContext('2d').drawImage(full,0,0,t.width,t.height);full.width=full.height=0;
  const blob=await new Promise((resolve,reject)=>t.toBlob(v=>v?resolve(v):reject(Error('Vorschaubild konnte nicht erstellt werden')),'image/png'));
  t.width=t.height=0;return blob;
 }
@@ -501,7 +501,7 @@ function scheduleThumbs(){
     const entry=state.queue.find(e=>!thumbCache.has(e));if(!entry)break;
     await sleep(60);
     let info;try{info=readSize();}catch(e){break;}
-    try{const label=await renderLabelCanvas(entry,info,{oneBit:true});storeThumb(entry,label);label.width=label.height=0;}catch(e){thumbCache.set(entry,'');}
+    try{const label=await renderLabelCanvas(entry,info);storeThumb(entry,label);label.width=label.height=0;}catch(e){thumbCache.set(entry,'');}
     if(entry!==state.queue[state.selected])releaseDecodedImages(entry);
    }
   }finally{thumbJob=null;}
@@ -558,7 +558,7 @@ async function ensureImage(entry){
   return entry.imgPromise;
 }
 async function rasterizePdfPage(page, importMode){
-  const dpi = importMode==='original' ? 300 : Number(importMode)||203;
+  const dpi = importMode==='original' ? 144 : Number(importMode)||203;
   let scale = dpi/72; const base = page.getViewport({scale:1});
   if(![base.width,base.height].every(v=>Number.isFinite(v)&&v>0))throw Error('Ungültige PDF-Seitengröße');
   scale=Math.min(scale,8192/base.width,8192/base.height);
@@ -567,15 +567,6 @@ async function rasterizePdfPage(page, importMode){
   await page.render({canvasContext:canvas.getContext('2d',{alpha:false}),viewport,background:'#ffffff'}).promise;
   const blob=await new Promise((resolve,reject)=>canvas.toBlob(b=>b?resolve(b):reject(Error('PDF-Seite konnte nicht gerastert werden')),'image/png'));
   canvas.width=0; canvas.height=0; return blob;
-}
-// Photos (many grey tones) get tone-faithful screening, graphics/text/logos a clean threshold.
-function looksLikePhoto(img){
- try{const s=Math.min(1,160/Math.max(img.naturalWidth||img.width,img.naturalHeight||img.height)),c=document.createElement('canvas');c.width=Math.max(1,Math.round((img.naturalWidth||img.width)*s));c.height=Math.max(1,Math.round((img.naturalHeight||img.height)*s));
-  const x=c.getContext('2d',{willReadFrequently:true});x.fillStyle='#fff';x.fillRect(0,0,c.width,c.height);x.drawImage(img,0,0,c.width,c.height);
-  const d=x.getImageData(0,0,c.width,c.height).data,bins=new Uint32Array(32);let mid=0,n=0;
-  for(let i=0;i<d.length;i+=4){const l=.299*d[i]+.587*d[i+1]+.114*d[i+2];bins[Math.min(31,l>>3)]++;n++;if(l>40&&l<215)mid++;}
-  c.width=c.height=0;const used=[...bins].filter(v=>v>n*.004).length;return mid/n>.18&&used>=14;
- }catch(e){return true;}
 }
 function createImageLayer(blob,name,importMode){return {id:'img:'+Date.now().toString(36)+Math.random().toString(36).slice(2),kind:'image',blob,name,importDpi:importMode,locked:false,layouts:{},crop:{x:0,y:0,w:1,h:1,shape:'rect',preset:'free'}};}
 async function createEmptyLabelEntry(){
@@ -628,7 +619,7 @@ async function addFiles(files,asLayersOverride=null){
       for(let n=1;n<=max;n++){
        const page=await doc.getPage(n);
        try{const pageBlob=await rasterizePdfPage(page,importMode);await addBlob(pageBlob,file.name+' – Seite '+n,'pdf');
-        const last=importedLayers.at(-1)?.layer;if(last)imageAdjustments(last).mode=looksLikePhoto(await decodeBlob(pageBlob))?'photo':'bw';}
+        const last=importedLayers.at(-1)?.layer;if(last)imageAdjustments(last).mode='original';}
        finally{page.cleanup();}
       }
      }finally{await task.destroy();}
@@ -641,7 +632,7 @@ async function addFiles(files,asLayersOverride=null){
       blob=await new Promise((resolve,reject)=>c.toBlob(b=>b?resolve(b):reject(Error('Bild konnte nicht umgewandelt werden')),'image/png'));c.width=c.height=0;
      }
      await addBlob(blob,file.name,'image');
-     const last=importedLayers.at(-1)?.layer;if(last)imageAdjustments(last).mode=looksLikePhoto(decoded)?'photo':'bw';
+     const last=importedLayers.at(-1)?.layer;if(last)imageAdjustments(last).mode='original';
     }else{skipped++;failed.push(file.name+' (nur PDF, PNG, JPG)');}
    }catch(e){skipped++;failed.push(file.name+' ('+(e.message||e)+')');}
   }
@@ -940,7 +931,7 @@ function drawTextItem(ctx,t,labelW,{guides=false}={}){
  if(guides){ctx.strokeStyle='#0ea5e9';ctx.lineWidth=1.5;ctx.setLineDash([4,3]);ctx.strokeRect(-width/2,-height/2,width,height);}
  ctx.restore();return g;
 }
-const ADJUST_DEFAULTS={exposure:0,contrast:0,blacks:0,whites:0,brightness:0,saturation:0,gamma:1,threshold:128,mode:'default',sketchStyle:'none'};
+const ADJUST_DEFAULTS={exposure:0,contrast:0,blacks:0,whites:0,brightness:0,saturation:0,gamma:1,threshold:128,mode:'original',sketchStyle:'none'};
 const ADJUST_KEYS=['exposure','contrast','blacks','whites','brightness','saturation','gamma'];
 function imageAdjustments(entry){return entry.adjustments ||= {...ADJUST_DEFAULTS};}
 function adjustFormat(key,value){return key==='gamma'?Number(value).toFixed(2):String(Math.round(Number(value)));}
@@ -983,7 +974,7 @@ function setImagePanel(entry){
 // ---- Black/white threshold, shown in the preview header next to the print view ----
 function effectiveThreshold(layer){
  const a=imageAdjustments(layer);
- if(a.mode==='default'||a.mode===undefined)return 128; // V17 and earlier = the driver's own 50 % rule
+ if(isOriginalMode(a))return 128; // unchanged image: neutral conversion when printing
  const v=Number(a.threshold);return Number.isFinite(v)?Math.max(1,Math.min(254,Math.round(v))):128;
 }
 function syncThresholdControl(){
@@ -996,17 +987,17 @@ function syncThresholdControl(){
  $('dd-threshold-value').textContent=String(value);
  for(const el of [slider,$('dd-threshold-minus'),$('dd-threshold-plus')])el.disabled=off;
  wrap.classList.toggle('dd-off',off);
- wrap.title=layer.locked?'Bild ist gesperrt':(photo?'Helligkeit des Fotos „':'Schwarzweiß-Schwelle für „')+(layer.name||'Bild')+'“: höher = dunkler / mehr Schwarz, niedriger = heller. 128 = unverändert.';
+ wrap.title=layer.locked?'Bild ist gesperrt':isOriginalMode(imageAdjustments(layer))?'Bild wird unverändert angezeigt und gedruckt (Treiber: dunkler als 50 % = schwarz). Schwelle verschieben, um das Druckbild zu sehen und anzupassen.':(photo?'Helligkeit des Fotos „':'Schwarzweiß-Schwelle für „')+(layer.name||'Bild')+'“: höher = dunkler / mehr Schwarz, niedriger = heller. 128 = unverändert.';
 }
 function setThreshold(value){
  const layer=activeImageLayer(state.queue[state.selected]);if(!layer||layer.locked)return;
- const a=imageAdjustments(layer);if(a.mode==='default'||a.mode===undefined)a.mode='bw';a.threshold=Math.max(1,Math.min(254,Math.round(Number(value)||128)));
+ const a=imageAdjustments(layer);if(isOriginalMode(a)){a.mode='bw';message('Schwelle verändert das Druckbild: Darstellung auf „Schwarzweiß“ umgestellt, damit du das Ergebnis siehst. „🎨 Original“ im Tab „Bild“ stellt das unveränderte Bild wieder her.');}a.threshold=Math.max(1,Math.min(254,Math.round(Number(value)||128)));
  syncModePanel(layer);syncThresholdControl();requestPreview();
 }
 function clamp01(v){return Math.max(0,Math.min(1,v));}
 function applyAdjustments(ctx,w,h,a){
  // Tonal corrections only. The 1-bit conversion for the thermal printer happens later,
- // at the final label resolution (see binarizeLayerCanvas / finalizeOneBit).
+ // at the final label resolution (see binarizeLayerCanvas).
  const brightness=(Number(a.brightness)||0)/100, exposure=Math.pow(2,(Number(a.exposure)||0)/45),contrast=(Number(a.contrast)||0)/100;
  const black=(Number(a.blacks)||0)/100,white=(Number(a.whites)||0)/100,sat=1+(Number(a.saturation)||0)/100,gamma=Number(a.gamma)||1;
  if(!brightness&&!contrast&&!black&&!white&&sat===1&&gamma===1&&exposure===1)return;
@@ -1030,6 +1021,7 @@ function applyAdjustments(ctx,w,h,a){
 // at label resolution: a fixed or custom threshold, or Floyd-Steinberg dithering for photos.
 // Print modes: 'bw' = threshold (logos, text, line art), 'photo' = Atkinson screening.
 // Older values ('dither', 'gray', 'atkinson') from V17/V18 drafts all mean 'photo'.
+function isOriginalMode(a){return sketchStyleOf(a)==='none'&&(a?.mode==='original'||a?.mode==='default'||a?.mode===undefined);}
 function layerPrintMode(layer){const m=imageAdjustments(layer).mode;return ['photo','dither','gray','atkinson'].includes(m)?'photo':'bw';}
 function binarizeLayerCanvas(canvas,mode,threshold){
  const w=canvas.width,h=canvas.height;if(!w||!h)return;
@@ -1052,12 +1044,6 @@ function binarizeLayerCanvas(canvas,mode,threshold){
   for(let i=0;i<px.length;i+=4){const a=px[i+3]/255;if(a<.5){px[i+3]=0;continue;}
    const l=(.299*px[i]+.587*px[i+1]+.114*px[i+2])*a+255*(1-a),v=l<thr?0:255;px[i]=px[i+1]=px[i+2]=v;px[i+3]=255;}
  }
- ctx.putImageData(img,0,0);
-}
-function finalizeOneBit(canvas){
- // Same rule as niimbot.js imageToPacked(): luminance < 128 prints black.
- const ctx=canvas.getContext('2d',{willReadFrequently:true}),img=ctx.getImageData(0,0,canvas.width,canvas.height),px=img.data;
- for(let i=0;i<px.length;i+=4){const v=(.299*px[i]+.587*px[i+1]+.114*px[i+2])<128?0:255;px[i]=px[i+1]=px[i+2]=v;px[i+3]=255;}
  ctx.putImageData(img,0,0);
 }
 function drawImageAtLayout(ctx,img,layout,pxPerLabel=1,view=null,layer=null){
@@ -1239,27 +1225,28 @@ function rasterizeImageLayer(layer,sizeInfo,img,layout,ext=null){
  c.width=ext?ext.w:lw;c.height=ext?ext.h:lh;
  drawImageAtLayout(c.getContext('2d'),adjustedSource(layer,img,layout.refW*layout.scale),layout,1,ext?{x:ext.l,y:ext.t,w:lw,h:lh}:null,{crop:{x:0,y:0,w:1,h:1,shape:normalizedCrop(layer).shape}});return c;
 }
-async function renderLabelCanvas(entry,baseSizeInfo,{physical=false,oneBit=true,extend=null,photoMask=false}={}){
+// Renders the label exactly as it is sent to the printer driver.
+// Like the first app versions, "🎨 Original" images are passed on unchanged – the Niimbot
+// driver (niimbot.js imageToPacked) then prints every pixel darker than 50 % black.
+// Only layers for which the user explicitly chose Schwarzweiß, Foto or a drawing style are
+// converted here.
+async function renderLabelCanvas(entry,baseSizeInfo,{physical=false,extend=null}={}){
  // extend = {l,t,r,b} in label pixels: also renders what lies outside the print area (preview only).
  const sizeInfo=effectiveSizeInfo(entry,baseSizeInfo),{size}=sizeInfo;validateSize(size);
  const lw=Math.round(size.w_px),lh=Math.round(size.h_px),ext=extend?{l:Math.round(extend.l),t:Math.round(extend.t),w:Math.round(lw+extend.l+extend.r),h:Math.round(lh+extend.t+extend.b)}:null;
  const canvas=document.createElement('canvas');canvas.width=ext?ext.w:lw;canvas.height=ext?ext.h:lh;
  if(canvas.width*canvas.height>12_000_000)throw Error('Etikett ist zu groß (max. 12 Millionen Pixel)');
- const ctx=canvas.getContext('2d',{alpha:false,willReadFrequently:oneBit});ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);
- // photoMask marks the pixels that come from photo-mode layers (used only by the preview).
- const mask=photoMask?new Uint8Array(canvas.width*canvas.height):null;
+ const ctx=canvas.getContext('2d',{alpha:false});ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);
  for(const id of layerOrder(entry)){
    const layer=imageForId(entry,id);
-   if(layer){const {img,layout}=await getLayout(layer,sizeInfo);const raster=rasterizeImageLayer(layer,sizeInfo,img,layout,ext);if(oneBit)binarizeLayerCanvas(raster,layerPrintMode(layer),effectiveThreshold(layer));
-    if(mask){const d=raster.getContext('2d',{willReadFrequently:true}).getImageData(0,0,raster.width,raster.height).data,isPhoto=layerPrintMode(layer)==='photo';for(let i=0,p=0;p<mask.length;i+=4,p++)if(d[i+3]>127)mask[p]=isPhoto?1:0;}
+   if(layer){const {img,layout}=await getLayout(layer,sizeInfo);const raster=rasterizeImageLayer(layer,sizeInfo,img,layout,ext);
+    if(!isOriginalMode(imageAdjustments(layer)))binarizeLayerCanvas(raster,layerPrintMode(layer),effectiveThreshold(layer));
     ctx.drawImage(raster,0,0);raster.width=raster.height=0;}
    else{const t=(entry.texts||[]).find(t=>t.id===id);if(t){ctx.save();if(ext)ctx.translate(ext.l,ext.t);drawTextItem(ctx,t,lw);ctx.restore();}}
  }
- if(oneBit)finalizeOneBit(canvas);
- if(mask)canvas.photoMask=mask;
  if(!physical || entry.pageRotation!==90)return canvas;
  const out=document.createElement('canvas');out.width=Math.round(baseSizeInfo.size.w_px);out.height=Math.round(baseSizeInfo.size.h_px);
- const octx=out.getContext('2d',{alpha:false});octx.fillStyle='#fff';octx.fillRect(0,0,out.width,out.height);octx.imageSmoothingEnabled=false;octx.save();octx.translate(out.width/2,out.height/2);octx.rotate(Math.PI/2);octx.drawImage(canvas,-canvas.width/2,-canvas.height/2);octx.restore();canvas.width=canvas.height=0;return out;
+ const octx=out.getContext('2d',{alpha:false});octx.fillStyle='#fff';octx.fillRect(0,0,out.width,out.height);octx.save();octx.translate(out.width/2,out.height/2);octx.rotate(Math.PI/2);octx.drawImage(canvas,-canvas.width/2,-canvas.height/2);octx.restore();canvas.width=canvas.height=0;return out;
 }
 
 let previewFrame=0;
@@ -1282,22 +1269,44 @@ function drawImageOutsidePrintArea(ctx,img,layout,crop,layer){
 }
 // Draws a 1-bit label onto the preview. Enlarged views use an integer nearest-neighbour
 // step first, so every printer dot has the same size (no uneven dots or moiré).
-// Draws the 1-bit label onto the preview the way it looks on paper. Printer dots are tiny
-// (0.085 mm at 300 dpi, 0.125 mm at 203 dpi): on the label a screened photo reads as smooth
-// grey tones. The preview is several times larger than the label, so photo areas are shown
-// as the eye sees them on paper (dots merged), while text, lines and logos stay crisp.
-function drawPrintPixels(ctx,label,x,y,w,h,dpi=300){
- ctx.save();ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';
- const mask=label.photoMask;
- if(mask&&mask.some(v=>v)&&label.width*label.height<=6e6){
-  const lx=label.getContext('2d',{willReadFrequently:true}),src=lx.getImageData(0,0,label.width,label.height),d=src.data,n=label.width*label.height,g=new Float32Array(n);
-  for(let i=0,p=0;p<n;i+=4,p++)g[p]=d[i];
-  const b=gaussBlur(g,label.width,label.height,Math.max(.8,1.15*dpi/300));
-  for(let i=0,p=0;p<n;i+=4,p++)if(mask[p]){const v=b[p];d[i]=d[i+1]=d[i+2]=v<0?0:v>255?255:v;}
-  const tmp=document.createElement('canvas');tmp.width=label.width;tmp.height=label.height;tmp.getContext('2d').putImageData(src,0,0);
-  ctx.drawImage(tmp,x,y,w,h);tmp.width=tmp.height=0;
- }else ctx.drawImage(label,x,y,w,h);
- ctx.restore();
+// Preview composition, layer by layer at screen resolution:
+//  • "🎨 Original" images are drawn unchanged from the source file (colour, full sharpness);
+//  • Schwarzweiß / Foto / drawing styles show the real print conversion (same code as printing);
+//    photo screening is shown as it looks on the label (tiny dots merge into grey tones);
+//  • text is drawn as on the label.
+async function composePreview(entry,sizeInfo,crop,extend,cssW,cssH){
+ const dpr=Math.max(1,Math.min(3,window.devicePixelRatio||1)),out=document.createElement('canvas');
+ out.width=Math.round(cssW*dpr);out.height=Math.round(cssH*dpr);
+ const ctx=out.getContext('2d');ctx.setTransform(dpr,0,0,dpr,0,0);ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';
+ const lw=Math.round(sizeInfo.size.w_px),lh=Math.round(sizeInfo.size.h_px);
+ const ext=extend?{l:Math.round(extend.l),t:Math.round(extend.t),w:Math.round(lw+extend.l+extend.r),h:Math.round(lh+extend.t+extend.b)}:null;
+ ctx.save();if(!ext){ctx.beginPath();ctx.rect(crop.x,crop.y,crop.w,crop.h);ctx.clip();}
+ for(const id of layerOrder(entry)){
+  const layer=imageForId(entry,id);
+  if(layer){
+   const {img,layout}=await getLayout(layer,sizeInfo),a=imageAdjustments(layer);
+   if(isOriginalMode(a)){drawImageAtLayout(ctx,adjustedSource(layer,img,0),layout,crop.scale,crop,{crop:{x:0,y:0,w:1,h:1,shape:normalizedCrop(layer).shape}});continue;}
+   const raster=rasterizeImageLayer(layer,sizeInfo,img,layout,ext),mode=layerPrintMode(layer);
+   binarizeLayerCanvas(raster,mode,effectiveThreshold(layer));
+   if(mode==='photo')paperLook(raster,sizeDpi(sizeInfo.size));
+   const ox=crop.x-(ext?.l||0)*crop.scale,oy=crop.y-(ext?.t||0)*crop.scale;
+   ctx.drawImage(raster,ox,oy,raster.width*crop.scale,raster.height*crop.scale);raster.width=raster.height=0;
+  }else{const t=(entry.texts||[]).find(t=>t.id===id);if(t){ctx.save();ctx.translate(crop.x,crop.y);ctx.scale(crop.scale,crop.scale);drawTextItem(ctx,t,lw);ctx.restore();}}
+ }
+ ctx.restore();return out;
+}
+// Printer dots are 0.085 mm (300 dpi) / 0.125 mm (203 dpi): on the label a screened photo
+// reads as grey tones. The preview is enlarged, so the dots are merged the way the eye sees them.
+function paperLook(raster,dpi){
+ const w=raster.width,h=raster.height,x=raster.getContext('2d',{willReadFrequently:true}),img=x.getImageData(0,0,w,h),d=img.data,n=w*h,g=new Float32Array(n),al=new Float32Array(n);
+ for(let i=0,p=0;p<n;i+=4,p++){if(d[i+3]>127){al[p]=1;g[p]=d[i];}}
+ const sg=Math.max(.8,1.15*dpi/300),gb=gaussBlur(g,w,h,sg),ab=gaussBlur(al,w,h,sg);
+ for(let i=0,p=0;p<n;i+=4,p++)if(al[p]){const v=gb[p]/Math.max(1e-3,ab[p]);d[i]=d[i+1]=d[i+2]=v<0?0:v>255?255:v;}
+ x.putImageData(img,0,0);
+}
+function storeThumbFromPreview(entry,crop){
+ try{const c=$('dd-editor'),sx=c.width/(c.clientWidth||1),f=Math.min(1,96/Math.max(crop.w,crop.h)),t=document.createElement('canvas');t.width=Math.max(1,Math.round(crop.w*f));t.height=Math.max(1,Math.round(crop.h*f));
+  t.getContext('2d').drawImage(c,crop.x*sx,crop.y*sx,crop.w*sx,crop.h*sx,0,0,t.width,t.height);storeThumb(entry,t);t.width=t.height=0;}catch(e){}
 }
 function drawCenteredHint(ctx,lines,box){
  ctx.save();ctx.fillStyle='#64748b';ctx.textAlign='center';ctx.textBaseline='middle';
@@ -1358,11 +1367,10 @@ async function paintPreview(){
    const lim=Math.max(sizeInfo.size.w_px,sizeInfo.size.h_px)*1.5,e=v=>Math.max(0,Math.min(lim,Math.ceil(v/crop.scale)));
    extend={l:e(crop.x),t:e(crop.y),r:e(cssW-crop.x-crop.w),b:e(cssH-crop.y-crop.h)};
   }
-  const label=await renderLabelCanvas(entry,baseSizeInfo,{extend,photoMask:true});
-  if(version!==state.previewVersion){label.width=label.height=0;return;}
-  const dx=crop.x-(extend?.l||0)*crop.scale,dy=crop.y-(extend?.t||0)*crop.scale,dw=label.width*crop.scale,dh=label.height*crop.scale;
-  if(!extend&&!state.editor.pointers.size)storeThumb(entry,label);
-  drawPrintPixels(ctx,label,dx,dy,dw,dh,sizeDpi(sizeInfo.size));label.width=label.height=0;
+  const layersCanvas=await composePreview(entry,sizeInfo,crop,extend,cssW,cssH);
+  if(version!==state.previewVersion){layersCanvas.width=layersCanvas.height=0;return;}
+  ctx.drawImage(layersCanvas,0,0,cssW,cssH);layersCanvas.width=layersCanvas.height=0;
+  if(!state.editor.pointers.size)storeThumbFromPreview(entry,crop);
   if(extend){ctx.save();ctx.fillStyle='rgba(217,222,231,.62)';ctx.beginPath();ctx.rect(0,0,cssW,cssH);ctx.rect(crop.x,crop.y,crop.w,crop.h);ctx.fill('evenodd');ctx.restore();}
   ctx.save();ctx.strokeStyle='#f43f5e';ctx.lineWidth=2.5;ctx.setLineDash([6,5]);ctx.strokeRect(crop.x,crop.y,crop.w,crop.h);ctx.restore();
   if(state.showOutsideBounds){
@@ -1416,7 +1424,7 @@ async function runPrintJob(entriesForJob,copies){
   if(Number(Niimbot.printer.modelId)!==Number(model.id))throw notReady('Der verbundene Drucker ('+(Niimbot.printer.label||'?')+') passt nicht zum gewählten Modell. Bitte Modell anpassen oder neu verbinden.');
   const entries=await entriesForJob(),total=entries.length*copies;let completed=0;
   for(const entry of entries){
-   if(state.stop)break;const canvas=await renderLabelCanvas(entry,sizeInfo,{physical:true,oneBit:true});const url=canvas.toDataURL('image/png');canvas.width=canvas.height=0;releaseDecodedImages(entry);
+   if(state.stop)break;const canvas=await renderLabelCanvas(entry,sizeInfo,{physical:true});const url=canvas.toDataURL('image/png');canvas.width=canvas.height=0;releaseDecodedImages(entry);
    for(let n=0;n<copies;n++){
     if(state.stop)break;message('Drucke '+(completed+1)+' von '+total+' …');
     await Niimbot.printImage(url,{model,size,density,onProgress:s=>{if(s!=='ok')$('dd-state').textContent='Druckstatus: '+String(s);}});
@@ -1947,6 +1955,7 @@ function updatePrinterSummary(){
 }
 // One chooser for how an image is printed: plain modes and drawing styles side by side.
 const PRINT_MODES={
+ original:{label:'🎨 Original',hint:'Unverändert wie importiert – in Farbe und voller Auflösung. Gedruckt wird wie in den ersten App-Versionen: Das Bild geht unverändert an den Niimbot-Treiber, der alles, was dunkler als 50 % ist, schwarz druckt. „Schwarzweiß“ zeigt genau dieses Druckbild vorab und lässt dich die Schwelle anpassen; „Foto“ druckt Graustufen als feine Punkte.'},
  bw:{label:'⚫ Schwarzweiß',hint:'Logos, Text, Grafiken. Die Schwelle oben in der Vorschau bestimmt, was schwarz wird.'},
  photo:{label:'🖼️ Foto',hint:'Graustufen als feine Druckpunkte, Helligkeit wie im Original. Mit „Schwelle“ oben heller/dunkler.'},
  pencil:{hint:'Klare Konturen mit leichten Bleistiftstrichen.'},
@@ -1955,13 +1964,13 @@ const PRINT_MODES={
  outline:{hint:'Nur die Umrisse des Motivs.'},
  hatch:{hint:'Schatten als Linienraster wie ein Kupferstich.'}
 };
-function modeKeyOf(a){const st=sketchStyleOf(a);if(st!=='none')return st;return ['photo','dither','gray','atkinson'].includes(a?.mode)?'photo':'bw';}
+function modeKeyOf(a){const st=sketchStyleOf(a);if(st!=='none')return st;if(isOriginalMode(a))return 'original';return ['photo','dither','gray','atkinson'].includes(a?.mode)?'photo':'bw';}
 function buildModePanel(){
  const panel=document.createElement('div');panel.className='dd-panel dd-sketch';panel.id='dd-mode-panel';
  const sliders=[['sketchLine','Linienstärke',1,6,'dünn','dick'],['sketchDetail','Details',0,100,'wenig','viel'],['sketchShade','Schattierung',0,100,'nur Linien','viel'],['sketchSmooth','Vereinfachen',0,5,'genau','ruhig']];
  const label=k=>PRINT_MODES[k].label||SKETCH_STYLES[k].label;
  panel.innerHTML='<h3>Druckmodus &amp; Zeichenstil</h3>'+
-  '<div class="dd-modegroup-title">Druckmodus</div><div class="dd-sketch-styles dd-two" role="radiogroup" aria-label="Druckmodus">'+['bw','photo'].map(k=>'<button type="button" data-mode="'+k+'" role="radio" aria-checked="false">'+label(k)+'</button>').join('')+'</div>'+
+  '<div class="dd-modegroup-title">Darstellung &amp; Druckmodus</div><div class="dd-sketch-styles" role="radiogroup" aria-label="Druckmodus">'+['original','bw','photo'].map(k=>'<button type="button" data-mode="'+k+'" role="radio" aria-checked="false">'+label(k)+'</button>').join('')+'</div>'+
   '<div class="dd-modegroup-title">Als Zeichnung</div><div class="dd-sketch-styles" role="radiogroup" aria-label="Zeichenstil">'+['pencil','soft','comic','outline','hatch'].map(k=>'<button type="button" data-mode="'+k+'" role="radio" aria-checked="false">'+label(k)+'</button>').join('')+'</div>'+
   '<p class="dd-caption" id="dd-mode-hint"></p>'+
   '<div class="dd-imageadjusts dd-sketch-sliders">'+sliders.map(([k,l,mn,mx,lo,hi])=>'<div class="dd-adjustitem" data-sketch-key="'+k+'"><label for="dd-'+k+'" class="dd-adjustlabel">'+l+' <output id="dd-'+k+'-value" class="dd-rangevalue"></output></label><input id="dd-'+k+'" class="dd-adjustslider" type="range" min="'+mn+'" max="'+mx+'" step="1"><div class="dd-adjuststepper"><button type="button" data-step="-1" aria-label="'+l+' verringern">−</button><span class="dd-sketch-ends"><span>'+lo+'</span><span>'+hi+'</span></span><button type="button" data-step="1" aria-label="'+l+' erhöhen">+</button></div></div>').join('')+'</div>'+
@@ -1969,7 +1978,8 @@ function buildModePanel(){
  const layerNow=()=>{const l=activeImageLayer(state.queue[state.selected]);return l&&!l.locked?l:null;};
  panel.querySelectorAll('[data-mode]').forEach(b=>b.addEventListener('click',()=>{
   const layer=layerNow();if(!layer)return;const a=imageAdjustments(layer),key=b.dataset.mode,wasBw=layerPrintMode(layer)==='bw'&&a.mode==='bw';
-  if(key==='bw'||key==='photo'){a.sketchStyle='none';a.mode=key;if(key==='bw'&&!wasBw)a.threshold=128;}
+  if(key==='original'){a.sketchStyle='none';a.mode='original';}
+  else if(key==='bw'||key==='photo'){a.sketchStyle='none';a.mode=key;if(!wasBw||key==='photo')a.threshold=128;}
   else{const def=SKETCH_STYLES[key];const fresh=a.sketchStyle!==key;a.sketchStyle=key;if(fresh)for(const k of SKETCH_KEYS)a[k]=def[k.replace('sketch','').toLowerCase()];a.mode=def.mode;if(fresh)a.threshold=128;}
   setImagePanel(layer);requestPreview();
  }));

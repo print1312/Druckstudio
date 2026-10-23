@@ -28,8 +28,8 @@ Wenn das Update nicht sofort erscheint: Seite einmal neu laden (in Bluefy ggf. T
 
 - **Oben – Drucker:** `🔗 Verbinden` öffnet die Bluetooth-Auswahl. Modell wird automatisch erkannt. Über `⚙ Drucker` lassen sich Modell, Etikettgröße und Dichte ändern. Auf dem iPhone klappt die Leiste nach dem Verbinden zusammen, damit die Vorschau größer ist.
 - **Mitte – Vorschau:** Der rote Rahmen ist der Druckbereich. Elemente antippen und ziehen; mit zwei Fingern zoomen und drehen. `− 100% +` ändert nur die Ansichtsgröße (auf die Prozentzahl tippen = 100 %).
-  - Die Vorschau zeigt **immer das Druckergebnis** – so, wie es auf dem Etikett aussieht: Fotos als Graustufen (der Drucker setzt sie aus feinen Punkten zusammen, die man auf dem Etikett nicht einzeln sieht), Text, Linien und Logos gestochen scharf.
-  - Kopfzeile: **Schwelle** (bei Schwarzweiß-Bildern: höher = mehr Schwarz; bei Fotos: höher = dunkler, 128 = wie das Original), **↻ 90°** dreht den Druckbereich – auch schon vor dem ersten Bild, neue Etiketten übernehmen die Ausrichtung.
+  - Importierte Bilder erscheinen **unverändert** (Farbe, volle Auflösung) und werden – wie in den ersten App-Versionen – unverändert an den Niimbot-Treiber übergeben. Erst wenn du im Tab „Bild“ einen anderen Modus wählst, zeigt die Vorschau das umgewandelte Druckbild.
+  - Kopfzeile: **Schwelle** (Schwarzweiß: höher = mehr Schwarz; Foto: höher = dunkler; 128 = neutral), **↻ 90°** dreht den Druckbereich – auch schon vor dem ersten Bild, neue Etiketten übernehmen die Ausrichtung.
   - **⬚ Außen** zeigt Teile außerhalb des Druckbereichs blass an.
   - `↶` / `↷` = Rückgängig / Wiederholen.
 - **Unten – Werkzeuge** (Tabs): Dateien, Text, Rundtext, Bild, Ebenen, Position, Vorlagen. Auf dem iPhone lässt sich die Höhe am Griff ziehen oder mit Klein/Mittel/Groß wählen. Auf dem Laptop stehen die Werkzeuge rechts neben der Vorschau.
@@ -39,11 +39,12 @@ Wenn das Update nicht sofort erscheint: Seite einmal neu laden (in Bluefy ggf. T
 
 Im Tab **Bild** gibt es eine gemeinsame Auswahl für das ausgewählte Bild:
 
-**Druckmodus**
+**Darstellung & Druckmodus**
+- **🎨 Original** (Standard nach dem Import): Bild bleibt unverändert, in Vorschau und beim Senden an den Drucker. Der Niimbot-Treiber druckt dann – wie bisher – alles, was dunkler als 50 % ist, schwarz.
 - **⚫ Schwarzweiß:** für Logos, Text, Grafiken. Die Grenze zwischen Schwarz und Weiß stellst du mit **Schwelle** oben in der Vorschau-Kopfzeile ein (höher = mehr Schwarz).
 - **🖼️ Foto:** Graustufen als feine Druckpunkte, Helligkeit und Look wie im Original – ohne automatische Kontrast- oder Schärfeänderung. Mit **Schwelle** heller/dunkler.
 
-Beim Import wird automatisch erkannt, ob ein Bild ein Foto (viele Graustufen) oder eine Grafik/ein Logo ist, und der passende Modus gewählt – egal ob JPG oder PNG. Der Look wird nur verändert, wenn du selbst einen anderen Modus, einen Zeichenstil oder die Regler im Bereich „Bild bearbeiten“ wählst.
+Die App verändert ein Bild nur, wenn du selbst einen anderen Modus, einen Zeichenstil, die Regler unter „Bild bearbeiten“ oder die Schwelle verwendest. Verschiebst du die Schwelle bei „Original“, wechselt die Darstellung auf „Schwarzweiß“, damit du die Wirkung siehst.
 
 **Als Zeichnung** (wandelt das Foto in Linien um – druckt am klarsten)
 
@@ -57,7 +58,7 @@ Beim Import wird automatisch erkannt, ob ein Bild ein Foto (viele Graustufen) od
 
 Regler (mit − / +): **Linienstärke**, **Details** (wie viel vom Bild zur Linie wird), **Schattierung** (nur Linien ↔ viel Fläche), **Vereinfachen** (glättet Hautporen, Laub, Rauschen, damit das Motiv klar heraustritt). „Stil-Standardwerte“ setzt sie zurück.
 
-Die Bildauflösung wird nur verändert, wenn du im Tab **Dateien** bei „Import-Pixeldichte“ 300 oder 203 dpi wählst. Bei „Original“ wird das Bild unverändert übernommen und nur beim Drucken auf die Druckerauflösung gebracht (das geht technisch nicht anders). PDF-Seiten werden bei „Original“ scharf mit 300 dpi gerendert.
+Die Bildauflösung wird nur verändert, wenn du im Tab **Dateien** bei „Import-Pixeldichte“ 300 oder 201 dpi wählst. Bei „Original“ wird das Bild unverändert übernommen und – wie in den ersten Versionen – erst beim Drucken auf die Pixel des Etiketts gebracht.
 
 ### Etikettgröße wechseln
 
