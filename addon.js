@@ -141,7 +141,7 @@ function refreshBusyUi(){
  const ids=['model','size','density','dd-copies','identify','disconnect','readstatus','rollread','rollsave','print','printreal','print3copies','print3','print5','print3dense','print5dense','dd-dock-add','dd-dock-save'];
  if(busy){for(const id of ids){const el=$(id);if(el){if(!pausedControls.has(el))pausedControls.set(el,el.disabled);el.disabled=true;}}}
  else{for(const [el,value] of pausedControls)el.disabled=value;pausedControls.clear();}
- buttonState();updateHistoryControls();
+ buttonState();updateHistoryControls();updateTemplateUiState();
 }
 for(const type of ['click','input','change','pointerdown','keydown','drop'])document.addEventListener(type,e=>{
  if(!isBusy()||history.restoring||e.target.closest?.('#dd-crop-dialog')||e.target.closest?.('#dd-stop'))return;
@@ -198,11 +198,30 @@ async function loadTemplateStore(){
 async function persistTemplateRecord(record){await templateTransaction('readwrite',store=>store.put(record));const index=state.savedTemplates.findIndex(t=>t.id===record.id);if(index>=0)state.savedTemplates[index]=record;else state.savedTemplates.unshift(record);state.savedTemplates.sort((a,b)=>String(b.updatedAt).localeCompare(String(a.updatedAt)));renderTemplateLibrary();}
 function templateMetaSummary(record){const sizeLabel=record?.sizeLabel||record?.sizeKey||"unbekannte Größe";const when=record?.updatedAt?new Date(record.updatedAt).toLocaleString("de-DE",{dateStyle:"short",timeStyle:"short"}):"";return [sizeLabel+(record?.pageRotation===90?" · 90°":""),when].filter(Boolean).join(" · ");}
 function downloadBlob(filename,blob){const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download=filename;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+// ---- Folders: chosen from a list, new ones can be added ----
+const FOLDER_STORE='niimbot-studio:template-folders';
+function knownFolders(){
+ let extra=[];try{extra=JSON.parse(localStorage.getItem(FOLDER_STORE)||'[]');}catch(e){}
+ const all=new Set(['Meine Vorlagen',...(Array.isArray(extra)?extra:[]),...state.savedTemplates.map(t=>t.folder||'Meine Vorlagen')]);
+ const cur=$('dd-template-folder')?.value;if(cur)all.add(cur);
+ return [...all].filter(f=>typeof f==='string'&&f.trim()).sort((a,b)=>a.localeCompare(b,'de'));
+}
+function rememberFolder(name){
+ name=String(name||'').trim().slice(0,60);if(!name)return;
+ try{const list=JSON.parse(localStorage.getItem(FOLDER_STORE)||'[]');if(Array.isArray(list)&&!list.includes(name)){list.push(name);localStorage.setItem(FOLDER_STORE,JSON.stringify(list));}}catch(e){}
+}
+function renderFolderSelect(){
+ const sel=$('dd-template-folder-select'),input=$('dd-template-folder');if(!sel||!input)return;
+ const value=input.value||'Meine Vorlagen';sel.replaceChildren();
+ for(const f of knownFolders()){const o=document.createElement('option');o.value=f;o.textContent='📁 '+f;sel.appendChild(o);}
+ const n=document.createElement('option');n.value='__new__';n.textContent='＋ Neuer Ordner …';sel.appendChild(n);
+ sel.value=value;
+}
 function syncTemplateFields(){
  const entry=state.queue[state.selected],input=$('dd-template-name'),folder=$('dd-template-folder');if(!input||!folder)return;
  if(entry&&!entry.editorId)entry.editorId=uid('edit_');
  const id=entry?.editorId||'';if(input.dataset.entry===id)return;
- input.dataset.entry=id;input.value=entry?.templateName||entry?.name||'';folder.value=entry?.templateFolder||'Meine Vorlagen';
+ input.dataset.entry=id;input.value=entry?.templateName||entry?.name||'';folder.value=entry?.templateFolder||folder.value||'Meine Vorlagen';renderFolderSelect();
 }
 function usedFontRecords(entry){
  const ids=new Set((entry.texts||[]).map(t=>t.font));
@@ -230,7 +249,7 @@ async function saveCurrentTemplateToBrowser({saveAs=false}={}){
   record.thumbnail=await makeTemplateThumbnail(record.entry,baseInfo);record.entry=snapshotClone(record.entry);
   for(const key of ['templateId','templateSourceSizeKey','templateSourceSizeMeta','editorId'])delete record.entry[key];
   await persistTemplateRecord(record);
-  entry.templateId=id;entry.templateName=name;entry.templateFolder=folder;entry.templateSourceSizeKey=baseInfo.sizeKey;entry.templateSourceSizeMeta={...baseInfo.size};
+  entry.templateId=id;entry.templateName=name;entry.templateFolder=folder;entry.name=name;rememberFolder(folder);entry.templateSourceSizeKey=baseInfo.sizeKey;entry.templateSourceSizeMeta={...baseInfo.size};
   showQueue();message((saveAs?'Neue Kopie gespeichert: ':'Vorlage gespeichert: ')+name);
  }finally{state.templateBusy=false;refreshBusyUi();renderTextControls();}
 }
@@ -266,11 +285,20 @@ async function prepareTemplateEntry(record,mode='edit'){
 async function openTemplateRecord(record,{mode='edit'}={}){
  if(isBusy())return;state.templateBusy=true;refreshBusyUi();
  try{
+  if(mode==='edit'){
+   const already=state.queue.findIndex(e=>e.templateId===record.id);
+   if(already>=0){selectQueueEntry(already);message('„'+record.name+'“ ist bereits geöffnet (Etikett '+(already+1)+') und wird angezeigt.');return;}
+  }
   const {entry,isSame}=await prepareTemplateEntry(record,mode);
+  entry.name=mode==='copy'?record.name+' (Kopie)':record.name;
+  if(mode==='copy')entry.templateName=entry.name;
   beginHistory('Vorlage '+(mode==='queue'?'in Warteschlange':'öffnen'));
-  state.queue.push(entry);state.selected=state.queue.length-1;state.textSelectedId=null;state.activeImageId='image';showQueue();renderTextControls();setImagePanel(activeImageLayer(entry));requestPreview();scheduleHistoryCommit(100);
-  if(mode!=='queue')window.NiimbotStudioUI?.selectTab(isSame?'text':'align');
-  message(mode==='queue'?'Vorlage zur Warteschlange hinzugefügt: '+record.name:isSame?'Vorlage '+(mode==='copy'?'als Kopie':'zum Bearbeiten')+' geöffnet.':'Vorlage auf '+($('size')?.selectedOptions?.[0]?.textContent?.trim()||'neue Größe')+' angepasst – alle Ebenen bleiben bearbeitbar. Das Original bleibt unverändert gespeichert.');
+  const cur=state.queue[state.selected],empty=cur&&cur.kind==='blank'&&!(cur.images||[]).length&&!(cur.texts||[]).length;
+  if(mode!=='queue'&&empty){revokeEntry(cur);state.queue[state.selected]=entry;}else{state.queue.push(entry);if(mode!=='queue')state.selected=state.queue.length-1;}
+  if(mode!=='queue'){state.textSelectedId=null;state.activeImageId='image';}
+  showQueue();renderTextControls();setImagePanel(activeImageLayer(state.queue[state.selected]));requestPreview();scheduleHistoryCommit(100);
+  const where=isSame?'':' Auf '+($('size')?.selectedOptions?.[0]?.textContent?.trim()||'die neue Größe')+' angepasst – alle Ebenen bleiben bearbeitbar, das gespeicherte Original bleibt unverändert.';
+  message(mode==='queue'?'„'+record.name+'“ zur Warteschlange hinzugefügt ('+state.queue.length+' Etiketten).':'„'+entry.name+'“ geöffnet – siehe Vorschau. Änderungen mit „💾 Speichern“ '+(mode==='copy'?'als neue Vorlage sichern.':'in der Vorlage sichern.')+where);
  }catch(e){message('Vorlage konnte nicht geöffnet werden: '+(e.message||e),true);}finally{state.templateBusy=false;refreshBusyUi();}
 }
 async function printSavedTemplate(record){return runPrintJob(async()=>[(await prepareTemplateEntry(record,'queue')).entry],1);}
@@ -392,19 +420,33 @@ let templateThumbUrls=[];
 function renderTemplateLibrary(){
  const list=$('dd-template-list');if(!list)return;
  for(const url of templateThumbUrls)URL.revokeObjectURL(url);templateThumbUrls=[];
- list.replaceChildren();updateTemplateUiState();
- const current=state.queue[state.selected];if($('dd-template-current'))$('dd-template-current').textContent=current?'Aktuell: '+current.name+' · Gespeicherte Originale bleiben unabhängig von neuen Druckgrößen.':'Noch kein Etikett ausgewählt.';
+ list.replaceChildren();updateTemplateUiState();renderFolderSelect();
+ const current=state.queue[state.selected];
+ if($('dd-template-current'))$('dd-template-current').textContent=current?(current.templateId&&state.savedTemplates.some(t=>t.id===current.templateId)?'Aktuelles Etikett ist die Vorlage „'+(current.templateName||current.name)+'“ – „💾 Speichern“ aktualisiert sie.':'Aktuelles Etikett: „'+current.name+'“ – noch nicht als Vorlage gespeichert.'):'Noch kein Etikett – eine Vorlage unten mit „📂 Öffnen“ laden oder ein Etikett gestalten.';
+ // folder chips
+ const chips=$('dd-template-folders');
+ if(chips){chips.replaceChildren();const counts=new Map();for(const t of state.savedTemplates){const f=t.folder||'Meine Vorlagen';counts.set(f,(counts.get(f)||0)+1);}
+  if(state.templateFolderFilter&&!counts.has(state.templateFolderFilter))state.templateFolderFilter='';
+  for(const [f,label] of [['','Alle ('+state.savedTemplates.length+')'],...[...counts.keys()].sort((a,b)=>a.localeCompare(b,'de')).map(f=>[f,'📁 '+f+' ('+counts.get(f)+')'])]){
+   const b=document.createElement('button');b.type='button';b.textContent=label;b.setAttribute('aria-pressed',String((state.templateFolderFilter||'')===f));b.onclick=()=>{state.templateFolderFilter=f;renderTemplateLibrary();};chips.appendChild(b);}
+  chips.hidden=!state.savedTemplates.length;}
  const q=($('dd-template-search')?.value||'').trim().toLocaleLowerCase('de');
- const filtered=state.savedTemplates.filter(t=>(t.name||'').toLocaleLowerCase('de').includes(q)||(t.folder||'').toLocaleLowerCase('de').includes(q));
- if(!filtered.length){const empty=document.createElement('p');empty.className='dd-muted';empty.textContent=q?'Keine passenden Vorlagen gefunden.':'Noch keine Vorlagen gespeichert.';list.appendChild(empty);return;}
+ const filtered=state.savedTemplates.filter(t=>(!state.templateFolderFilter||(t.folder||'Meine Vorlagen')===state.templateFolderFilter)&&((t.name||'').toLocaleLowerCase('de').includes(q)||(t.folder||'').toLocaleLowerCase('de').includes(q)));
+ if(!filtered.length){const empty=document.createElement('p');empty.className='dd-muted';empty.textContent=q||state.templateFolderFilter?'Keine passenden Vorlagen gefunden.':'Noch keine Vorlagen gespeichert.';list.appendChild(empty);return;}
  for(const record of filtered){
-  const card=document.createElement('div');card.className='dd-template-card';
+  const isOpen=state.queue.some(e=>e.templateId===record.id),isCurrent=current?.templateId===record.id;
+  const card=document.createElement('div');card.className='dd-template-card'+(isCurrent?' current':'');
   const top=document.createElement('div');top.className='dd-template-cardmain';
   if(record.thumbnail){const image=document.createElement('img');const url=URL.createObjectURL(record.thumbnail);templateThumbUrls.push(url);image.src=url;image.alt='Vorschau '+record.name;top.appendChild(image);}
-  const labels=document.createElement('div');labels.className='dd-template-summary';const title=document.createElement('strong');title.textContent=record.name;const sub=document.createElement('div');sub.className='dd-muted';sub.textContent=templateMetaSummary(record);const folder=document.createElement('div');folder.className='dd-caption';folder.textContent='📁 '+(record.folder||'Meine Vorlagen');labels.append(title,sub,folder);top.append(labels);card.appendChild(top);
+  const labels=document.createElement('div');labels.className='dd-template-summary';const title=document.createElement('strong');title.textContent=record.name+(isCurrent?' · in Bearbeitung':isOpen?' · geöffnet':'');
+  const sub=document.createElement('div');sub.className='dd-muted';sub.textContent=templateMetaSummary(record);
+  const folderSel=document.createElement('select');folderSel.className='dd-card-folder';folderSel.setAttribute('aria-label','Ordner von „'+record.name+'“');
+  for(const f of knownFolders()){const o=document.createElement('option');o.value=f;o.textContent='📁 '+f;folderSel.appendChild(o);}folderSel.value=record.folder||'Meine Vorlagen';
+  folderSel.onchange=async()=>{try{const updated={...record,folder:folderSel.value,updatedAt:record.updatedAt};await persistTemplateRecord(updated);for(const e of state.queue)if(e.templateId===record.id)e.templateFolder=folderSel.value;if(state.queue[state.selected]?.templateId===record.id&&$('dd-template-folder')){$('dd-template-folder').value=folderSel.value;renderFolderSelect();}message('„'+record.name+'“ in Ordner „'+folderSel.value+'“ verschoben.');}catch(e){message('Verschieben fehlgeschlagen: '+(e.message||e),true);}};
+  labels.append(title,sub,folderSel);top.append(labels);card.appendChild(top);
   const actions=document.createElement('div');actions.className='dd-template-actions';
-  for(const [label,action] of [['✏️ Bearbeiten',()=>openTemplateRecord(record,{mode:'edit'})],['⧉ Kopie',()=>openTemplateRecord(record,{mode:'copy'})],['➕ Warteschlange',()=>openTemplateRecord(record,{mode:'queue'})],['🖨 Drucken',()=>printSavedTemplate(record)],['↓ Datei',()=>exportTemplateRecord(record)],['🗑',()=>deleteTemplateRecord(record.id)]]){
-   const btn=document.createElement('button');btn.type='button';btn.textContent=label;btn.onclick=action;actions.appendChild(btn);
+  for(const [label,tip,action,cls] of [['📂 Öffnen','Vorlage öffnen und bearbeiten – „💾 Speichern“ aktualisiert sie',()=>openTemplateRecord(record,{mode:'edit'}),'primary'],['⧉ Als Kopie','Als neues Etikett öffnen; das Original bleibt unverändert',()=>openTemplateRecord(record,{mode:'copy'})],['➕ Warteschlange','Zusätzlich in die Druckwarteschlange legen',()=>openTemplateRecord(record,{mode:'queue'})],['🖨 Drucken','Direkt drucken, ohne zu öffnen',()=>printSavedTemplate(record)],['↓ Datei','Als Datei sichern',()=>exportTemplateRecord(record)],['🗑','Vorlage löschen',()=>deleteTemplateRecord(record.id)]]){
+   const btn=document.createElement('button');btn.type='button';btn.textContent=label;btn.title=tip;if(cls)btn.className=cls;if(label==='🗑')btn.setAttribute('aria-label','Vorlage „'+record.name+'“ löschen');btn.onclick=action;actions.appendChild(btn);
   }
   card.appendChild(actions);list.appendChild(card);
  }
@@ -2112,9 +2154,11 @@ function setupTabbedLayout(){
  // Templates
  const templates=pages.get('vorlagen');templates.appendChild(make('p','dd-tab-lead','Etiketten speichern · wiederverwenden · in anderer Größe drucken'));
  const currentInfo=make('p','dd-muted');currentInfo.id='dd-template-current';templates.appendChild(currentInfo);
- const nameLine=make('div','dd-row');nameLine.innerHTML='<label>Vorlagenname<input id="dd-template-name" type="text" placeholder="Mein Etikett"></label><label>Ordner<input id="dd-template-folder" type="text" value="Meine Vorlagen"></label>';templates.appendChild(nameLine);
+ const nameLine=make('div','dd-row');nameLine.innerHTML='<label>Vorlagenname<input id="dd-template-name" type="text" placeholder="Mein Etikett" maxlength="100"></label><label>Ordner<select id="dd-template-folder-select"></select><input id="dd-template-folder" type="hidden" value="Meine Vorlagen"></label>';templates.appendChild(nameLine);
+ const newFolder=make('div','dd-row dd-newfolder');newFolder.id='dd-newfolder-row';newFolder.hidden=true;newFolder.innerHTML='<label>Name des neuen Ordners<input id="dd-newfolder-name" type="text" maxlength="60" placeholder="z. B. Küche, Büro, Geschenke"></label><button type="button" id="dd-newfolder-ok" class="primary">Ordner anlegen</button><button type="button" id="dd-newfolder-cancel">Abbrechen</button>';templates.appendChild(newFolder);
  const toolbar=make('div','dd-toolbar');toolbar.innerHTML='<button id="dd-template-save-browser" type="button" class="primary">💾 Speichern</button><button id="dd-template-save-as" type="button">Als Kopie speichern</button><button id="dd-template-export-file" type="button">↓ Als Datei</button><button id="dd-template-import-btn" type="button">↑ Datei öffnen</button><input id="dd-template-import-file" type="file" accept=".json,application/json" hidden>';templates.appendChild(toolbar);
  const searchLine=make('div','dd-row');searchLine.innerHTML='<label>Vorlagen durchsuchen<input id="dd-template-search" type="search" placeholder="Name oder Ordner"></label>';templates.appendChild(searchLine);
+ const chipRow=make('div','dd-textlist dd-folderchips');chipRow.id='dd-template-folders';chipRow.setAttribute('aria-label','Ordner filtern');templates.appendChild(chipRow);
  const templateList=make('div','dd-template-gallery');templateList.id='dd-template-list';templates.appendChild(templateList);
  const note=make('p','dd-muted');note.textContent='Vorlagen werden nur in diesem Browser auf diesem Gerät gespeichert. Für Sicherung oder Gerätewechsel „↓ Als Datei“ verwenden. Wird eine Vorlage bei anderer Etikettgröße geöffnet, wird sie proportional angepasst; das Original bleibt unverändert.';templates.appendChild(note);
 
@@ -2252,7 +2296,12 @@ function setupTabbedLayout(){
  $('dd-template-import-btn').onclick=()=>$('dd-template-import-file').click();
  $('dd-template-import-file').onchange=async event=>{const file=event.target.files?.[0];if(!file)return;try{await importTemplateFile(file);}catch(e){message('Vorlage konnte nicht importiert werden: '+(e.message||e),true);}event.target.value='';};
  $('dd-template-search').oninput=renderTemplateLibrary;
- for(const [id,key] of [['dd-template-name','templateName'],['dd-template-folder','templateFolder']])$(id).addEventListener('input',()=>{const entry=state.queue[state.selected];if(entry)entry[key]=$(id).value;});
+ $('dd-template-name').addEventListener('input',()=>{const entry=state.queue[state.selected];if(entry)entry.templateName=$('dd-template-name').value;});
+ const setFolder=f=>{$('dd-template-folder').value=f;const entry=state.queue[state.selected];if(entry)entry.templateFolder=f;renderFolderSelect();};
+ $('dd-template-folder-select').addEventListener('change',e=>{if(e.target.value==='__new__'){$('dd-newfolder-row').hidden=false;$('dd-newfolder-name').value='';$('dd-newfolder-name').focus();renderFolderSelect();return;}setFolder(e.target.value);});
+ const createFolder=()=>{const n=$('dd-newfolder-name').value.trim().slice(0,60);if(!n){$('dd-newfolder-name').focus();return;}rememberFolder(n);setFolder(n);$('dd-newfolder-row').hidden=true;renderTemplateLibrary();message('Ordner „'+n+'“ angelegt und ausgewählt. Mit „💾 Speichern“ landet das Etikett darin.');};
+ $('dd-newfolder-ok').onclick=createFolder;$('dd-newfolder-name').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();createFolder();}});
+ $('dd-newfolder-cancel').onclick=()=>{$('dd-newfolder-row').hidden=true;renderFolderSelect();};
  $('dd-rotate-label').onclick=toggleLabelRotation;
  $('dd-label-rotate-mode').value=state.labelRotateMode;
  $('dd-label-rotate-mode').onchange=e=>{state.labelRotateMode=e.target.value==='with'?'with':'keep';};

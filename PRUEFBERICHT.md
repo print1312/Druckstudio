@@ -33,9 +33,16 @@ Grundlage: V17 („Mehrbild, Ebenen, Rahmen“). Der gesamte Code (`index.html`,
 ### Zeichenstile
 Kantenerhaltende Vereinfachung (Kuwahara) vor der Linienerkennung, zweistufige Konturerkennung mit Hysterese (durchgehende Linien, Motiv tritt hervor), Entfernen kleiner Störflecken, geglättete Striche, Berechnung in Druckauflösung. Getestet mit 9 Motiven aus 6 Bereichen (2 Porträts, 2 Landschaften/Architektur, 1 Wohnraum – künstlich erzeugtes Testbild, 2 Gegenstände, 1 Tier, 1 Pflanze).
 
+## Vorlagen überarbeitet
+
+- **Fehler behoben:** Nach dem ersten Speichern blieben „Speichern“, „Als Kopie speichern“ und „Als Datei“ gesperrt – Namens- oder Ordneränderungen ließen sich nicht mehr sichern.
+- **Ordner auswählbar:** Auswahlliste mit allen Ordnern und „＋ Neuer Ordner …“, Ordner-Filter über der Liste, Verschieben direkt in der Vorlagenkarte. Angelegte Ordner bleiben erhalten.
+- **Laden:** „📂 Öffnen“ erzeugt keine Duplikate mehr, ersetzt ein leeres Etikett, bleibt im Vorlagen-Tab und übernimmt den Vorlagennamen; die bearbeitete Vorlage ist markiert. Klare Beschriftung von Kopie/Warteschlange/Drucken.
+- Getestet (iPhone und Laptop, je 26 Prüfungen): Speichern mit neuem Ordner, erneutes Speichern/Umbenennen, Kopie, Ordnerfilter, Verschieben, Neuladen der Seite (alles bleibt erhalten), Öffnen ohne Duplikat, Bearbeiten + Speichern, Kopie/Warteschlange/Direktdruck, Suche, Öffnen in anderer Größe, Export/Import mit Ordner, Löschen.
+
 ## Automatisierte Tests (Chromium, Playwright, simulierter Drucker)
 
-Alle Tests bestanden: **224 von 224** Prüfungen in 14 Durchläufen (iPhone 390 px, iPhone SE 375 px, Laptop 1366 px).
+Alle Tests bestanden: **276 von 276** Prüfungen in 15 Durchläufen (iPhone 390 px, iPhone SE 375 px, Laptop 1366 px).
 
 Schwellen-Test: Anteil schwarzer Pixel im Druckbild bei Schwelle 60 / 128 / 200 = 1,5 % / 14,6 % / 42 % – Vorschau und Druckbild ändern sich gleich, Druckbild bleibt reines Schwarz/Weiß, +/−, Rückgängig und eigene Werte je Bildebene funktionieren.
 

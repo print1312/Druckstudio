@@ -64,16 +64,10 @@ Die Bildauflösung wird nur verändert, wenn du im Tab **Dateien** bei „Import
 
 Beim Wechsel der Etikettgröße werden alle Texte und Bilder proportional angepasst und bleiben bearbeitbar. Jede Größe merkt sich ihre eigene Anordnung – beim Zurückwechseln ist alles wieder genau wie vorher. Rückgängig funktioniert auch hier.
 
-### Vorlagen
+### Vorlagen (Tab „💾 Vorlagen“)
 
-Vorlagen werden nur im Browser auf diesem Gerät gespeichert. Für Sicherung oder Gerätewechsel `↓ Als Datei` exportieren und auf dem anderen Gerät `↑ Datei öffnen`. Eine Vorlage, die bei einer anderen Etikettgröße geöffnet wird, wird angepasst; das gespeicherte Original bleibt unverändert.
-
-## Was in V18 geändert wurde
-
-Siehe `PRUEFBERICHT.md` für die vollständige Liste der gefundenen Fehler, der Änderungen und der Tests.
-
-## Probleme
-
-- **„App-Dateien konnten nicht geladen werden“:** Liegen alle Dateien direkt im Hauptverzeichnis (keine Unterordner)? Ist GitHub Pages aktiviert?
-- **Kein Bluetooth:** iPhone → Bluefy verwenden. Laptop → Chrome/Edge, Seite über `https://` öffnen.
-- **PDF-Schrift fehlt:** Für manche PDFs lädt PDF.js Zusatzschriften von `cdn.jsdelivr.net`; dafür ist Internet nötig. Die PDF-Inhalte selbst bleiben auf dem Gerät.
+- **Speichern:** Namen eingeben, unter **Ordner** einen vorhandenen Ordner wählen oder „＋ Neuer Ordner …“ anlegen, dann `💾 Speichern`. Ist das Etikett bereits eine Vorlage, wird sie aktualisiert (auch umbenennen). `Als Kopie speichern` legt eine zusätzliche Vorlage an. `💾 Speichern` unten in der Leiste macht dasselbe.
+- **Ordner:** Die Knöpfe über der Liste filtern nach Ordner („Alle“, „📁 Küche (3)“ …). In jeder Karte lässt sich die Vorlage per Auswahlliste in einen anderen Ordner verschieben.
+- **Laden:** `📂 Öffnen` lädt die Vorlage zum Bearbeiten (ein leeres Etikett wird ersetzt, eine bereits geöffnete Vorlage nur angezeigt – keine Doppelten). `⧉ Als Kopie` öffnet sie als neues Etikett, das Original bleibt unverändert. `➕ Warteschlange` legt sie zusätzlich zum Drucken bereit, `🖨 Drucken` druckt direkt.
+- Die gerade bearbeitete Vorlage ist blau umrandet („in Bearbeitung“).
+- Vorlagen liegen nur in diesem Browser auf diesem Gerät. Zum Sichern oder für ein anderes Gerät `↓ Datei` bzw. `↓ Als Datei` und dort `↑ Datei öffnen`. Bei anderer Etikettgröße wird eine Vorlage proportional angepasst; das gespeicherte Original bleibt unverändert.
